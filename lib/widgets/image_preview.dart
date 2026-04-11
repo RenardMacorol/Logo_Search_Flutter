@@ -4,51 +4,47 @@ import 'package:flutter/material.dart';
 class ImagePreview extends StatelessWidget {
   final File? image;
   final bool showSegmentation;
+  // Pwede nating dagdagan ng maskData para sa heatmap overlay
+  final String? maskBase64; 
 
   const ImagePreview({
-    Key? key,
-    required this.image,
+    Key? key, 
+    this.image, 
     required this.showSegmentation,
+    this.maskBase64,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 300, 
-      width: double.infinity, 
-      color: Colors.black87,
-      child: image != null
-          ? Stack(
+      height: 250,
+      width: double.infinity,
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.grey[400]!),
+      ),
+      child: image == null
+          ? const Center(child: Text("No logo selected"))
+          : Stack(
               alignment: Alignment.center,
               children: [
-                Image.file(image!, fit: BoxFit.contain),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(15),
+                  child: Image.file(image!, fit: BoxFit.contain),
+                ),
+                // Futuristic Overlay pag "Analyzing" or "Done"
                 if (showSegmentation)
-                  Container(
-                    width: 120, height: 120,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.greenAccent, width: 3),
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: [BoxShadow(color: Colors.greenAccent.withOpacity(0.3), blurRadius: 10, spreadRadius: 2)]
-                    ),
-                    child: const Align(
-                      alignment: Alignment.topRight,
-                      child: Padding(
-                        padding: EdgeInsets.all(4.0),
-                        child: Text("98%", style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, backgroundColor: Colors.black54)),
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: Colors.greenAccent, width: 3),
                       ),
                     ),
-                  )
+                  ),
               ],
-            )
-          : const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.image_search, size: 60, color: Colors.white54),
-                  SizedBox(height: 16),
-                  Text('Upload an image to scan', style: TextStyle(color: Colors.white54)),
-                ],
-              ),
             ),
     );
   }
