@@ -1,15 +1,15 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart'; // REQUIRED para sa kIsWeb
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_flip_card/flutter_flip_card.dart';
 
-import '../models/logo_match.dart';
 import '../services/api_service.dart';
+import '../models/logo_match.dart';
 import '../widgets/result_card.dart';
-import '../widgets/offline_view.dart';
 import '../widgets/image_preview.dart';
+import '../widgets/latent_map_dialog.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({Key? key}) : super(key: key);
@@ -20,250 +20,229 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final ApiService _apiService = ApiService();
+  final FlipCardController _flipController = FlipCardController();
   final ImagePicker _picker = ImagePicker();
-  final FlipCardController _flipController = FlipCardController(); 
 
-  File? _selectedImage;
+  // IMAGE STATES
+  File? _selectedImage;       // Para sa Mobile
+  Uint8List? _webImageBytes;  // Para sa Web
+
   bool _isLoading = false;
-  String _loadingText = "Analyzing...";
-  bool _showSegmentation = false;
+  String _loadingText = "AI is thinking...";
   List<LogoMatch> _results = [];
-  String? _errorMessage;
-
-  String? _originalImgBase64;
-  String? _maskImgBase64;
-
-  bool _isCheckingServer = true; 
-  bool _isServerOnline = false;
-  bool _usePrototypeMode = false;
-
+  String? _originalImg64, _maskImg64, _errorMessage;
+  
   String _selectedScope = 'BOTH';
   int _selectedK = 10;
-  String _selectedCategory = 'All'; 
+  String _selectedCategory = 'All';
   final List<String> _categories = ['All', 'Food', 'Tech', 'Medical', 'Finance', 'Others'];
 
-  @override
-  void initState() {
-    super.initState();
-    _checkServerStatus();
-  }
-
-  Future<void> _checkServerStatus() async {
-    setState(() { 
-      _isCheckingServer = true; 
-      _errorMessage = null; 
-      _usePrototypeMode = false;
-    });
-    bool isOnline = await _apiService.checkServerStatus();
-    setState(() {
-      _isServerOnline = isOnline;
-      _isCheckingServer = false;
-    });
-  }
+  dynamic _latentData;
+  Map<String, dynamic>? _meta;
+  int _totalFound = 0;
 
   Future<void> _performSearch() async {
-    if (_selectedImage == null) return;
-    
-    setState(() { 
-      _isLoading = true; 
-      _errorMessage = null; 
-      _results = []; 
-      _showSegmentation = false;
-      _originalImgBase64 = null;
-      _maskImgBase64 = null;
+    // Check kung may image na napili (Bytes sa web, File sa mobile)
+    if (kIsWeb && _webImageBytes == null) return;
+    if (!kIsWeb && _selectedImage == null) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _results = [];
     });
 
     try {
-      if (_usePrototypeMode) {
-        _results = await _apiService.searchLogoMockup(
-          onProgress: (text) => setState(() => _loadingText = text),
-        );
-      } else {
-        final Map<String, dynamic> response = await _apiService.searchLogo(
-          imageFile: _selectedImage!,
-          scope: _selectedScope,
-          topK: _selectedK,
-          category: _selectedCategory == 'All' ? '' : _selectedCategory,
-          onProgress: (text) => setState(() => _loadingText = text),
-        );
+      final res = await _apiService.searchLogo(
+        imageFile: kIsWeb ? null : _selectedImage, // Pass null kung web
+        webImageBytes: kIsWeb ? _webImageBytes : null, // Pass bytes kung web
+        scope: _selectedScope,
+        topK: _selectedK,
+        category: _selectedCategory == 'All' ? '' : _selectedCategory,
+        onProgress: (text) => setState(() => _loadingText = text),
+      );
 
-        setState(() { 
-          _results = response['matches'];
-          _originalImgBase64 = response['original_img'];
-          _maskImgBase64 = response['mask_img'];
-          _showSegmentation = true; 
-        });
-      }
+      setState(() {
+        _results = res['matches'];
+        _originalImg64 = res['original_img'];
+        _maskImg64 = res['mask_img'];
+        _latentData = res['latent_map'];
+        _totalFound = res['total_found'] ?? 0;
+        _meta = res['meta'];
+        _isLoading = false;
+      });
     } catch (e) {
-      setState(() => _errorMessage = "Search Failed: $e");
-    } finally {
-      setState(() => _isLoading = false);
+      setState(() {
+        _errorMessage = "Search Failed: $e";
+        _isLoading = false;
+      });
     }
   }
 
   Future<void> _pickImage(ImageSource source) async {
-    try {
-      final XFile? pickedFile = await _picker.pickImage(source: source);
-      if (pickedFile != null) {
+    final pickedFile = await _picker.pickImage(source: source);
+    if (pickedFile != null) {
+      if (kIsWeb) {
+        final bytes = await pickedFile.readAsBytes();
+        setState(() { _webImageBytes = bytes; });
+      } else {
         setState(() { _selectedImage = File(pickedFile.path); });
-        _performSearch();
       }
-    } catch (e) {
-      setState(() => _errorMessage = "Error picking image: $e");
+      _performSearch();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isCheckingServer) {
-      return const Scaffold(backgroundColor: Colors.black87, body: Center(child: CircularProgressIndicator(color: Colors.greenAccent)));
-    }
-
-    if (!_isServerOnline && !_usePrototypeMode) {
-      return OfflineView(onRetry: _checkServerStatus, onBypass: () => setState(() => _usePrototypeMode = true));
-    }
-
     return Scaffold(
-      appBar: AppBar(title: const Text('WonksNet AI Scanner'), centerTitle: true),
+      backgroundColor: const Color(0xFF0F0F1A),
+      appBar: AppBar(
+        title: const Text('WonksNet AI Scanner', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: Stack(
         children: [
           Column(
             children: [
-              ImagePreview(image: _selectedImage, showSegmentation: _showSegmentation),
+              // Updated ImagePreview to handle both Web and Mobile
+              _buildImagePreview(),
               
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
                   children: [
                     Expanded(flex: 2, child: _buildDropdownK()),
-                    const SizedBox(width: 5),
+                    const SizedBox(width: 8),
                     Expanded(flex: 3, child: _buildDropdownScope()),
-                    const SizedBox(width: 5),
+                    const SizedBox(width: 8),
                     Expanded(flex: 3, child: _buildDropdownCategory()),
                   ],
                 ),
               ),
 
-              const SizedBox(height: 15),
-              _buildActionButtons(),
-              const Divider(height: 10), // Reduced height
+              _buildActionRow(),
+              
+              if (_results.isNotEmpty) _buildMetaInfoBar(),
+
+              const Divider(color: Colors.white10, height: 1),
 
               Expanded(
                 child: _errorMessage != null 
-                  ? _buildErrorWidget()
-                  : _results.isEmpty && !_isLoading
-                    ? _buildInitialWidget()
-                    : ListView.builder(
-                        // LUNAS: Dinagdagan ng +1 para sa Heatmap tile
-                        itemCount: _results.length + 1, 
-                        itemBuilder: (context, index) {
-                          // Unang item ay ang Heatmap section
-                          if (index == 0) {
-                            return _buildCollapsibleHeatmap();
-                          }
-                          // Ang susunod ay ang actual results, adjusted index
-                          final matchIndex = index - 1;
-                          return ResultCard(match: _results[matchIndex], isTopMatch: matchIndex == 0);
-                        },
-                      ),
+                  ? Center(child: Text(_errorMessage!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)))
+                  : ListView.builder(
+                      itemCount: _results.length + 1,
+                      itemBuilder: (context, index) {
+                        if (index == 0) return _buildHeatmapSection();
+                        return ResultCard(match: _results[index - 1], isTopMatch: index == 1);
+                      },
+                    ),
               ),
             ],
           ),
-
           if (_isLoading) _buildLoadingOverlay(),
         ],
       ),
     );
   }
 
-  // LUNAS: Ito ay collapsible na ngayon at nasa loob ng scroll view
-  Widget _buildCollapsibleHeatmap() {
-    if (_originalImgBase64 == null || _maskImgBase64 == null) {
-      return const SizedBox.shrink(); // Hide if no data
-    }
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      elevation: 0, // Clean look, seamless with scroll
-      color: Colors.blueGrey.shade50,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ExpansionTile(
-        key: const PageStorageKey('heatmap_tile'), // Maintains state during scroll
-        title: Row(
-          children: [
-            Icon(Icons.psychology_outlined, color: Colors.blue.shade900, size: 20),
-            const SizedBox(width: 10),
-            Text(
-              "SHOW AI ANALYSIS (Tap Card)",
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.blue.shade900, letterSpacing: 0.8),
-            ),
-          ],
-        ),
-        subtitle: const Text("Tap the result area below to flip between logo and heatmap", style: TextStyle(fontSize: 9, color: Colors.grey)),
-        childrenPadding: const EdgeInsets.all(16),
-        collapsedBackgroundColor: Colors.transparent,
-        backgroundColor: Colors.transparent,
-        children: [
-          Center(
-            child: Column(
-              children: [
-                FlipCard(
-                  controller: _flipController,
-                  rotateSide: RotateSide.bottom,
-                  onTapFlipping: true,
-                  frontWidget: _buildAnalysisFace(_originalImgBase64!, "INPUT LOGO", Colors.blue),
-                  backWidget: _buildAnalysisFace(_maskImgBase64!, "HEATMAP MASK", Colors.redAccent),
-                ),
-                const SizedBox(height: 12),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAnalysisFace(String base64Str, String label, Color accent) {
+  // Helper para sa Image Display (Universal)
+  Widget _buildImagePreview() {
     return Container(
-      width: 180, // Slightly bigger, seamless in ExpansionTile
-      height: 180,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: accent.withOpacity(0.5), width: 2),
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: const Offset(0, 5))],
-      ),
-      child: Stack(
+      height: 250,
+      width: double.infinity,
+      color: Colors.black26,
+      child: kIsWeb 
+        ? (_webImageBytes != null ? Image.memory(_webImageBytes!, fit: BoxFit.contain) : _noImagePlaceholder())
+        : (_selectedImage != null ? Image.file(_selectedImage!, fit: BoxFit.contain) : _noImagePlaceholder()),
+    );
+  }
+
+  Widget _noImagePlaceholder() => const Center(child: Icon(Icons.image, color: Colors.white10, size: 50));
+
+  Widget _buildActionRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(13),
-            child: Image.memory(base64Decode(base64Str), fit: BoxFit.contain, width: 180, height: 180),
+          _btn(Icons.camera_alt, "Camera", () => _pickImage(ImageSource.camera)),
+          _btn(Icons.photo_library, "Gallery", () => _pickImage(ImageSource.gallery)),
+          IconButton(
+            onPressed: ((_selectedImage != null || _webImageBytes != null) && !_isLoading) ? _performSearch : null, 
+            icon: const Icon(Icons.refresh, color: Colors.blueAccent),
           ),
-          Positioned(
-            top: 8, right: 8,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(4)),
-              child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
-            ),
-          )
         ],
       ),
     );
   }
 
-  // Helper UI Widgets to keep build clean
-  Widget _buildDropdownK() => DropdownButtonFormField<int>(value: _selectedK, items: [5, 10, 25].map((k) => DropdownMenuItem(value: k, child: Text("$k"))).toList(), onChanged: (v) => setState(() => _selectedK = v!), decoration: const InputDecoration(labelText: "Top K"));
-  Widget _buildDropdownScope() => DropdownButtonFormField<String>(value: _selectedScope, items: ['PH', 'GLOBAL', 'BOTH'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => _selectedScope = v!), decoration: const InputDecoration(labelText: "Scope"));
-  Widget _buildDropdownCategory() => DropdownButtonFormField<String>(value: _selectedCategory, items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(), onChanged: (v) => setState(() => _selectedCategory = v!), decoration: const InputDecoration(labelText: "Category"));
-  
-  Widget _buildActionButtons() => Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-    ElevatedButton.icon(onPressed: _isLoading ? null : () => _pickImage(ImageSource.camera), icon: const Icon(Icons.camera_alt), label: const Text('Camera')),
-    ElevatedButton.icon(onPressed: _isLoading ? null : () => _pickImage(ImageSource.gallery), icon: const Icon(Icons.photo_library), label: const Text('Gallery')),
-    CircleAvatar(backgroundColor: Colors.blue.withOpacity(0.1), child: IconButton(onPressed: (_selectedImage != null && !_isLoading) ? _performSearch : null, icon: const Icon(Icons.refresh, color: Colors.blue))),
-  ]);
+  Widget _btn(IconData icon, String label, VoidCallback onTap) {
+    return ElevatedButton.icon(
+      onPressed: _isLoading ? null : onTap,
+      icon: Icon(icon, size: 16),
+      label: Text(label, style: const TextStyle(fontSize: 11)),
+      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E1E2E), foregroundColor: Colors.white),
+    );
+  }
 
-  Widget _buildInitialWidget() => const Center(child: Padding(padding: EdgeInsets.all(20.0), child: Text("WonksNet Wonks! Scan a logo to begin AI analysis.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey))));
-  Widget _buildErrorWidget() => Center(child: Padding(padding: const EdgeInsets.all(20.0), child: Text(_errorMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red))));
-  Widget _buildLoadingOverlay() => Container(color: Colors.black.withOpacity(0.6), child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const CircularProgressIndicator(color: Colors.greenAccent), const SizedBox(height: 20), Text(_loadingText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))])));
+  Widget _buildMetaInfoBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Colors.blueAccent.withOpacity(0.05),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text("TTA: ${(_meta?['tta_enabled'] == true) ? 'ACTIVE' : 'OFF'}", 
+              style: const TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
+          Text("$_totalFound Matches", style: const TextStyle(color: Colors.white70, fontSize: 10)),
+          if (_latentData != null)
+            ActionChip(
+              label: const Text("LATENT MAP", style: TextStyle(fontSize: 9, color: Colors.blueAccent)),
+              onPressed: () => showDialog(context: context, builder: (c) => LatentMapDialog(queryPoint: _latentData, matches: _results)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeatmapSection() {
+    if (_originalImg64 == null || _maskImg64 == null) return const SizedBox.shrink();
+    return Card(
+      margin: const EdgeInsets.all(12),
+      color: const Color(0xFF1E1E2E),
+      child: ExpansionTile(
+        title: const Text("AI VISION ANALYSIS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+        children: [
+          FlipCard(
+            rotateSide: RotateSide.bottom,
+            controller: _flipController,
+            frontWidget: _analysisBox(_originalImg64!, "INPUT"),
+            backWidget: _analysisBox(_maskImg64!, "HEATMAP"),
+          ),
+          const SizedBox(height: 10),
+        ],
+      ),
+    );
+  }
+
+  Widget _analysisBox(String b64, String label) => Container(
+    height: 180, width: 180, decoration: BoxDecoration(border: Border.all(color: Colors.white10)),
+    child: Stack(children: [
+      Image.memory(base64Decode(b64), fit: BoxFit.contain),
+      Positioned(top: 5, left: 5, child: Text(label, style: const TextStyle(color: Colors.amber, fontSize: 8))),
+    ]),
+  );
+
+  Widget _buildDropdownK() => _drop<int>(_selectedK, [5, 10, 25], "Top K", (v) => setState(() => _selectedK = v!));
+  Widget _buildDropdownScope() => _drop<String>(_selectedScope, ['PH', 'GLOBAL', 'BOTH'], "Scope", (v) => setState(() => _selectedScope = v!));
+  Widget _buildDropdownCategory() => _drop<String>(_selectedCategory, _categories, "Category", (v) => setState(() => _selectedCategory = v!));
+
+  Widget _drop<T>(T val, List<T> items, String lbl, Function(T?) fn) => DropdownButtonFormField<T>(
+    value: val, dropdownColor: const Color(0xFF1E1E2E), items: items.map((i) => DropdownMenuItem(value: i, child: Text(i.toString()))).toList(), onChanged: fn,
+    decoration: InputDecoration(labelText: lbl, labelStyle: const TextStyle(fontSize: 10), contentPadding: const EdgeInsets.symmetric(horizontal: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))),
+  );
+
+  Widget _buildLoadingOverlay() => Container(color: Colors.black87, child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const CircularProgressIndicator(), const SizedBox(height: 20), Text(_loadingText)])));
 }
