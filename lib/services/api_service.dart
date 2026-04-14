@@ -9,6 +9,8 @@ import '../models/logo_match.dart';
 class ApiService {
   // IP Address ng iyong Flask server. 
   // Paalala: Sa Web, siguruhing ang Flask ay naka-CORS enabled.
+	// ip addr show | grep inet use this command
+	//flutter run -d web-server --web-hostname 1.0.0.0 --web-port 5001
   final String serverUrl = 'http://192.168.1.108:5000'; 
 
   // 1. Health Check

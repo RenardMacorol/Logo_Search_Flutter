@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // REQUIRED para sa kIsWeb
+import 'package:flutter/foundation.dart'; 
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_flip_card/flutter_flip_card.dart';
 
@@ -20,12 +20,11 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final ApiService _apiService = ApiService();
-  final FlipCardController _flipController = FlipCardController();
+  final FlipCardController _flipController = FlipCardController(); 
   final ImagePicker _picker = ImagePicker();
 
-  // IMAGE STATES
-  File? _selectedImage;       // Para sa Mobile
-  Uint8List? _webImageBytes;  // Para sa Web
+  File? _selectedImage;       
+  Uint8List? _webImageBytes;  
 
   bool _isLoading = false;
   String _loadingText = "AI is thinking...";
@@ -42,7 +41,6 @@ class _SearchScreenState extends State<SearchScreen> {
   int _totalFound = 0;
 
   Future<void> _performSearch() async {
-    // Check kung may image na napili (Bytes sa web, File sa mobile)
     if (kIsWeb && _webImageBytes == null) return;
     if (!kIsWeb && _selectedImage == null) return;
 
@@ -54,8 +52,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
     try {
       final res = await _apiService.searchLogo(
-        imageFile: kIsWeb ? null : _selectedImage, // Pass null kung web
-        webImageBytes: kIsWeb ? _webImageBytes : null, // Pass bytes kung web
+        imageFile: kIsWeb ? null : _selectedImage,
+        webImageBytes: kIsWeb ? _webImageBytes : null,
         scope: _selectedScope,
         topK: _selectedK,
         category: _selectedCategory == 'All' ? '' : _selectedCategory,
@@ -97,7 +95,7 @@ class _SearchScreenState extends State<SearchScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F1A),
       appBar: AppBar(
-        title: const Text('WonksNet AI Scanner', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: const Text('WonksNet AI Scanner', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -106,28 +104,22 @@ class _SearchScreenState extends State<SearchScreen> {
         children: [
           Column(
             children: [
-              // Updated ImagePreview to handle both Web and Mobile
               _buildImagePreview(),
-              
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 child: Row(
                   children: [
-                    Expanded(flex: 2, child: _buildDropdownK()),
-                    const SizedBox(width: 8),
-                    Expanded(flex: 3, child: _buildDropdownScope()),
-                    const SizedBox(width: 8),
-                    Expanded(flex: 3, child: _buildDropdownCategory()),
+                    Flexible(flex: 2, child: _buildDropdownK()),
+                    const SizedBox(width: 4),
+                    Flexible(flex: 3, child: _buildDropdownScope()),
+                    const SizedBox(width: 4),
+                    Flexible(flex: 4, child: _buildDropdownCategory()),
                   ],
                 ),
               ),
-
               _buildActionRow(),
-              
               if (_results.isNotEmpty) _buildMetaInfoBar(),
-
               const Divider(color: Colors.white10, height: 1),
-
               Expanded(
                 child: _errorMessage != null 
                   ? Center(child: Text(_errorMessage!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)))
@@ -135,7 +127,8 @@ class _SearchScreenState extends State<SearchScreen> {
                       itemCount: _results.length + 1,
                       itemBuilder: (context, index) {
                         if (index == 0) return _buildHeatmapSection();
-                        return ResultCard(match: _results[index - 1], isTopMatch: index == 1);
+                        final matchIndex = index - 1;
+                        return ResultCard(match: _results[matchIndex], isTopMatch: matchIndex == 0);
                       },
                     ),
               ),
@@ -147,7 +140,6 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  // Helper para sa Image Display (Universal)
   Widget _buildImagePreview() {
     return Container(
       height: 250,
@@ -159,7 +151,7 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _noImagePlaceholder() => const Center(child: Icon(Icons.image, color: Colors.white10, size: 50));
+  Widget _noImagePlaceholder() => const Center(child: Icon(Icons.image_search, color: Colors.white10, size: 60));
 
   Widget _buildActionRow() {
     return Padding(
@@ -199,7 +191,8 @@ class _SearchScreenState extends State<SearchScreen> {
           Text("$_totalFound Matches", style: const TextStyle(color: Colors.white70, fontSize: 10)),
           if (_latentData != null)
             ActionChip(
-              label: const Text("LATENT MAP", style: TextStyle(fontSize: 9, color: Colors.blueAccent)),
+              backgroundColor: const Color(0xFF1E1E2E),
+              label: const Text("LATENT MAP", style: TextStyle(fontSize: 9, color: Colors.blueAccent, fontWeight: FontWeight.bold)),
               onPressed: () => showDialog(context: context, builder: (c) => LatentMapDialog(queryPoint: _latentData, matches: _results)),
             ),
         ],
@@ -212,15 +205,24 @@ class _SearchScreenState extends State<SearchScreen> {
     return Card(
       margin: const EdgeInsets.all(12),
       color: const Color(0xFF1E1E2E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ExpansionTile(
+        initiallyExpanded: true,
         title: const Text("AI VISION ANALYSIS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
         children: [
-          FlipCard(
-            rotateSide: RotateSide.bottom,
-            controller: _flipController,
-            frontWidget: _analysisBox(_originalImg64!, "INPUT"),
-            backWidget: _analysisBox(_maskImg64!, "HEATMAP"),
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: GestureDetector(
+              onTap: () => _flipController.flipcard(), // FIXED: Lowercase 'c' for v0.0.6
+              child: FlipCard(
+                rotateSide: RotateSide.bottom,
+                controller: _flipController,
+                frontWidget: _analysisBox(_originalImg64!, "INPUT (Original)"),
+                backWidget: _analysisBox(_maskImg64!, "HEATMAP (Segmentation)"),
+              ),
+            ),
           ),
+          const Text("Tap image to flip", style: TextStyle(color: Colors.white24, fontSize: 9)),
           const SizedBox(height: 10),
         ],
       ),
@@ -228,10 +230,11 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _analysisBox(String b64, String label) => Container(
-    height: 180, width: 180, decoration: BoxDecoration(border: Border.all(color: Colors.white10)),
+    height: 200, width: 200,
+    decoration: BoxDecoration(border: Border.all(color: Colors.white10), borderRadius: BorderRadius.circular(12), color: Colors.black),
     child: Stack(children: [
-      Image.memory(base64Decode(b64), fit: BoxFit.contain),
-      Positioned(top: 5, left: 5, child: Text(label, style: const TextStyle(color: Colors.amber, fontSize: 8))),
+      Center(child: ClipRRect(borderRadius: BorderRadius.circular(11), child: Image.memory(base64Decode(b64), fit: BoxFit.contain))),
+      Positioned(top: 8, left: 8, child: Container(padding: const EdgeInsets.all(4), color: Colors.black54, child: Text(label, style: const TextStyle(color: Colors.amber, fontSize: 8, fontWeight: FontWeight.bold)))),
     ]),
   );
 
@@ -239,10 +242,25 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget _buildDropdownScope() => _drop<String>(_selectedScope, ['PH', 'GLOBAL', 'BOTH'], "Scope", (v) => setState(() => _selectedScope = v!));
   Widget _buildDropdownCategory() => _drop<String>(_selectedCategory, _categories, "Category", (v) => setState(() => _selectedCategory = v!));
 
-  Widget _drop<T>(T val, List<T> items, String lbl, Function(T?) fn) => DropdownButtonFormField<T>(
-    value: val, dropdownColor: const Color(0xFF1E1E2E), items: items.map((i) => DropdownMenuItem(value: i, child: Text(i.toString()))).toList(), onChanged: fn,
-    decoration: InputDecoration(labelText: lbl, labelStyle: const TextStyle(fontSize: 10), contentPadding: const EdgeInsets.symmetric(horizontal: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))),
-  );
+  Widget _drop<T>(T value, List<T> items, String label, Function(T?) onChanged) {
+    return DropdownButtonFormField<T>(
+      value: value,
+      isExpanded: true,
+      dropdownColor: const Color(0xFF1E1E2E),
+      style: const TextStyle(color: Colors.white, fontSize: 10),
+      decoration: InputDecoration(
+        labelText: label, 
+        labelStyle: const TextStyle(color: Colors.white54, fontSize: 9), 
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8), 
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      items: items.map((i) => DropdownMenuItem(value: i, child: Text(i.toString(), overflow: TextOverflow.ellipsis))).toList(),
+      onChanged: onChanged,
+    );
+  }
 
-  Widget _buildLoadingOverlay() => Container(color: Colors.black87, child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const CircularProgressIndicator(), const SizedBox(height: 20), Text(_loadingText)])));
+  Widget _buildLoadingOverlay() => Container(
+    color: Colors.black87, 
+    child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const CircularProgressIndicator(color: Colors.blueAccent), const SizedBox(height: 20), Text(_loadingText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))])),
+  );
 }
