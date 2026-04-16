@@ -5,7 +5,10 @@ class LogoMatch {
   final String logoUrl;
   final String stability;
   final String? thumbnailBase64;
-  final double marginGap; // <--- Siguraduhin na nandito ito
+  final double marginGap;
+  // 🟢 ORB ADDITION: Para sa Forensic Similarity Score
+  final double orbSimilarity; 
+  final String? forensicBase64;
 
   LogoMatch({
     required this.brandName,
@@ -14,14 +17,16 @@ class LogoMatch {
     required this.logoUrl,
     required this.stability,
     this.thumbnailBase64,
-    this.marginGap = 0.0, // <--- At nandito rin sa constructor
+    this.marginGap = 0.0,
+    this.orbSimilarity = 0.0, // 🟢 Default to 0
+    this.forensicBase64,
   });
 
   factory LogoMatch.fromJson(Map<String, dynamic> json) {
     final metadata = json['metadata'] ?? {};
     
     // Confidence Fix
-    double rawConf = (json['confidence'] as num).toDouble();
+    double rawConf = (json['confidence'] as num?)?.toDouble() ?? 0.0;
     if (rawConf > 1.0 && rawConf <= 100.0) {
       rawConf = rawConf / 100.0;
     } else if (rawConf > 100.0) {
@@ -34,21 +39,27 @@ class LogoMatch {
       rawBase64 = rawBase64.split(',').last;
     }
 
-    // PAGKUHA NG MARGIN GAP GALING BACKEND
-    // Siguraduhin na 'margin_gap' ang key na gamit sa Python post_processor.py
+    // Margin Gap extraction
     double gap = 0.0;
-    if (metadata.containsKey('margin_gap')) {
+    if (metadata is Map && metadata.containsKey('margin_gap')) {
       gap = (metadata['margin_gap'] as num).toDouble();
     }
 
+    // 🟢 ORB EXTRACTION: 
+    // Dito natin kukunin yung geometric match score na galing sa forensic engine
+    double orb = (json['orb_similarity'] as num?)?.toDouble() ?? 0.0;
+
     return LogoMatch(
-      brandName: metadata['brand_name']?.toString() ?? 'Unknown Brand',
+      // Pilitin nating kuhanin ang brand name sa kahit anong key
+      brandName: json['brand'] ?? json['Brand'] ?? metadata['brand_name'] ?? 'Unknown',
       confidence: rawConf,
-      domain: metadata['industry_domain']?.toString() ?? 'General',
-      logoUrl: json['image_path'] ?? '',
-      stability: json['stability_label'] ?? 'N/A',
+      domain: json['Category'] ?? metadata['industry_domain'] ?? 'General',
+      logoUrl: json['File_Path'] ?? json['image_path'] ?? '',
+      stability: json['consensus'] ?? json['stability_label'] ?? 'N/A',
       thumbnailBase64: rawBase64,
-      marginGap: gap, // <--- I-pasa dito
+      marginGap: gap,
+      orbSimilarity: orb, // 🟢 I-pasa ang ORB score
+      forensicBase64: json['forensic_viz'],
     );
   }
 }

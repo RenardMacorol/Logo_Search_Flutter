@@ -1,31 +1,31 @@
+	// ip addr show | grep inet use this command
+	//flutter run -d web-server --web-hostname 1.0.0.0 --web-port 5001
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart'; // Import para sa 'compute' at 'kIsWeb'
+import 'package:flutter/foundation.dart'; 
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart'; // Import para sa MediaType (Web support)
+import 'package:http_parser/http_parser.dart'; 
 import '../models/logo_match.dart';
 
 class ApiService {
-  // IP Address ng iyong Flask server. 
-  // Paalala: Sa Web, siguruhing ang Flask ay naka-CORS enabled.
-	// ip addr show | grep inet use this command
-	//flutter run -d web-server --web-hostname 1.0.0.0 --web-port 5001
-  final String serverUrl = 'http://192.168.1.108:5000'; 
+  // 🟢 IP Address ng Flask server
+  // Paalala: Siguraduhin na ang mobile device at PC ay nasa iisang Wi-Fi network.
+  final String serverUrl = 'http://127.0.0.1:5000'; 
 
-  // 1. Health Check
+  // --- 1. HEALTH CHECK ---
   Future<bool> checkServerStatus() async {
     try {
       final response = await http.get(Uri.parse(serverUrl))
           .timeout(const Duration(seconds: 3));
       return response.statusCode == 200;
     } catch (e) {
-      print("🔴 Server Offline: $e");
+      debugPrint("🔴 Server Offline: $e");
       return false;
     }
   }
 
-  // 2. Galaxy/Discovery Engine (Supports Large Data via Compute)
+  // --- 2. GALAXY/DISCOVERY ENGINE ---
   Future<List<dynamic>> getGalaxyPoints({String scope = 'BOTH'}) async {
     try {
       final queryParams = '?scope=$scope&industry=All';
@@ -34,20 +34,21 @@ class ApiService {
       ).timeout(const Duration(seconds: 25)); 
 
       if (response.statusCode == 200) {
+        // Ginagamit ang 'compute' para hindi mag-lag ang UI sa malaking JSON data
         return await compute(_parseGalaxyJson, response.body);
       } else {
         throw Exception("Server Error: ${response.statusCode}");
       }
     } catch (e) {
-      print("🔴 Galaxy API Error: $e");
+      debugPrint("🔴 Galaxy API Error: $e");
       rethrow;
     }
   }
 
-  // 3. Real API Search Engine (HYBRID: Android/iOS/Web)
+  // --- 3. SEARCH ENGINE (MOBILE & WEB HYBRID) ---
   Future<Map<String, dynamic>> searchLogo({
-    File? imageFile,          // Gagamitin sa Mobile (dart:io)
-    Uint8List? webImageBytes, // Gagamitin sa Web (dart:typed_data)
+    File? imageFile,          // Para sa Android/iOS
+    Uint8List? webImageBytes, // Para sa Web
     required Function(String) onProgress,
     String scope = 'BOTH',
     int topK = 10,
@@ -58,25 +59,21 @@ class ApiService {
       onProgress("Preparing Image...");
       var request = http.MultipartRequest('POST', Uri.parse('$serverUrl/api/predict'));
 
-      // --- WEB VS MOBILE IMAGE HANDLING ---
+      // Handling Image Upload base sa Platform
       if (kIsWeb) {
         if (webImageBytes == null) throw Exception("Missing image bytes for web upload");
-        
-        // Pag Web, bytes ang pinapasa sa Multipart
         request.files.add(http.MultipartFile.fromBytes(
           'file',
           webImageBytes,
           filename: 'upload.jpg',
-          contentType: MediaType('image', 'jpeg'), // Kailangan ito para mabasa ng Flask
+          contentType: MediaType('image', 'jpeg'),
         ));
       } else {
         if (imageFile == null) throw Exception("Missing file for mobile upload");
-        
-        // Pag Mobile, path ang ginagamit
         request.files.add(await http.MultipartFile.fromPath('file', imageFile.path));
       }
 
-      // --- ATTACH FIELDS ---
+      // Payload Fields
       request.fields['scope'] = scope;
       request.fields['top_k'] = topK.toString();
       request.fields['sort_by'] = sortBy;
@@ -94,15 +91,22 @@ class ApiService {
         final Map<String, dynamic> data = json.decode(response.body);
         
         if (data['status'] == 'success') {
-          List<dynamic> predictions = data['predictions'];
+          // Kunin ang listahan ng predictions
+          final List<dynamic> predictions = data['predictions'] ?? [];
           
           return {
-            "matches": predictions.map((json) => LogoMatch.fromJson(json)).toList(),
+            // 🟢 CRITICAL: Dito natin pino-process ang bawat match.
+            // Ang LogoMatch.fromJson na ang bahalang kumuha ng forensic_viz at orb_similarity.
+            "matches": predictions.map((item) => LogoMatch.fromJson(item)).toList(),
+            
+            // Mga base64 images para sa AI Vision Analysis section (Heatmap/Input)
             "original_img": data['original_img_base64'], 
             "mask_img": data['mask_img_base64'],
+            
+            // Meta data para sa status bar
             "latent_map": data['latent_map'],
-            "total_found": data['total_found'],
-            "meta": data['meta'],
+            "total_found": data['total_found'] ?? 0,
+            "meta": data['meta'] ?? {},
           };
         } else {
           throw Exception(data['message'] ?? "Unknown API Error");
@@ -111,22 +115,29 @@ class ApiService {
         throw Exception("Server Error: ${response.statusCode}");
       }
     } catch (e) {
-      print("🔴 Flutter API Error: $e");
+      debugPrint("🔴 Flutter API Error: $e");
       rethrow;
     }
   }
 
-  // 4. Mockup Mode
+  // --- 4. MOCKUP MODE (For Testing) ---
   Future<List<LogoMatch>> searchLogoMockup({required Function(String) onProgress}) async {
     onProgress("Simulating...");
     await Future.delayed(const Duration(seconds: 2));
     return [
-      LogoMatch(brandName: "Mockup - Nike", confidence: 98.5, domain: "Sports", logoUrl: "", stability: "Strong"),
+      LogoMatch(
+        brandName: "Mockup Brand", 
+        confidence: 0.985, 
+        domain: "Technology", 
+        logoUrl: "", 
+        stability: "Strong Contender",
+        orbSimilarity: 92.0,
+      ),
     ];
   }
 }
 
-// --- GLOBAL HELPER (Dapat nasa labas ng class para sa 'compute') ---
+// --- GLOBAL HELPERS (Dapat nasa labas ng class para sa 'compute') ---
 
 List<dynamic> _parseGalaxyJson(String responseBody) {
   final Map<String, dynamic> decoded = json.decode(responseBody);

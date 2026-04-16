@@ -8,7 +8,6 @@ import 'package:flutter_flip_card/flutter_flip_card.dart';
 import '../services/api_service.dart';
 import '../models/logo_match.dart';
 import '../widgets/result_card.dart';
-import '../widgets/image_preview.dart';
 import '../widgets/latent_map_dialog.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -29,6 +28,8 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _isLoading = false;
   String _loadingText = "AI is thinking...";
   List<LogoMatch> _results = [];
+  
+  // 🟢 CLEANUP: Tinanggal ang _forensicImg64 dahil nasa loob na ito ng bawat match object
   String? _originalImg64, _maskImg64, _errorMessage;
   
   String _selectedScope = 'BOTH';
@@ -61,7 +62,7 @@ class _SearchScreenState extends State<SearchScreen> {
       );
 
       setState(() {
-        _results = res['matches'];
+        _results = res['matches']; // Dito na kasama ang forensicBase64 sa bawat item
         _originalImg64 = res['original_img'];
         _maskImg64 = res['mask_img'];
         _latentData = res['latent_map'];
@@ -105,18 +106,7 @@ class _SearchScreenState extends State<SearchScreen> {
           Column(
             children: [
               _buildImagePreview(),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                child: Row(
-                  children: [
-                    Flexible(flex: 2, child: _buildDropdownK()),
-                    const SizedBox(width: 4),
-                    Flexible(flex: 3, child: _buildDropdownScope()),
-                    const SizedBox(width: 4),
-                    Flexible(flex: 4, child: _buildDropdownCategory()),
-                  ],
-                ),
-              ),
+              _buildFilterSection(),
               _buildActionRow(),
               if (_results.isNotEmpty) _buildMetaInfoBar(),
               const Divider(color: Colors.white10, height: 1),
@@ -127,8 +117,15 @@ class _SearchScreenState extends State<SearchScreen> {
                       itemCount: _results.length + 1,
                       itemBuilder: (context, index) {
                         if (index == 0) return _buildHeatmapSection();
+                        
                         final matchIndex = index - 1;
-                        return ResultCard(match: _results[matchIndex], isTopMatch: matchIndex == 0);
+                        
+                        // 🟢 SIMPLIFIED: Pasa lang ang 'match'. 
+                        // Ang Card na ang bahalang mag-check kung may forensic data siya.
+                        return ResultCard(
+                          match: _results[matchIndex], 
+                          isTopMatch: matchIndex == 0,
+                        );
                       },
                     ),
               ),
@@ -140,9 +137,25 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  // Pinagsama ang mga dropdown para mas malinis tignan
+  Widget _buildFilterSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      child: Row(
+        children: [
+          Flexible(flex: 2, child: _buildDropdownK()),
+          const SizedBox(width: 4),
+          Flexible(flex: 3, child: _buildDropdownScope()),
+          const SizedBox(width: 4),
+          Flexible(flex: 4, child: _buildDropdownCategory()),
+        ],
+      ),
+    );
+  }
+
   Widget _buildImagePreview() {
     return Container(
-      height: 250,
+      height: 220,
       width: double.infinity,
       color: Colors.black26,
       child: kIsWeb 
@@ -207,13 +220,13 @@ class _SearchScreenState extends State<SearchScreen> {
       color: const Color(0xFF1E1E2E),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ExpansionTile(
-        initiallyExpanded: true,
+        initiallyExpanded: false,
         title: const Text("AI VISION ANALYSIS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
         children: [
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: GestureDetector(
-              onTap: () => _flipController.flipcard(), // FIXED: Lowercase 'c' for v0.0.6
+              onTap: () => _flipController.flipcard(),
               child: FlipCard(
                 rotateSide: RotateSide.bottom,
                 controller: _flipController,
@@ -233,7 +246,7 @@ class _SearchScreenState extends State<SearchScreen> {
     height: 200, width: 200,
     decoration: BoxDecoration(border: Border.all(color: Colors.white10), borderRadius: BorderRadius.circular(12), color: Colors.black),
     child: Stack(children: [
-      Center(child: ClipRRect(borderRadius: BorderRadius.circular(11), child: Image.memory(base64Decode(b64), fit: BoxFit.contain))),
+      Center(child: ClipRRect(borderRadius: BorderRadius.circular(11), child: Image.memory(base64Decode(b64.contains(',') ? b64.split(',').last : b64), fit: BoxFit.contain))),
       Positioned(top: 8, left: 8, child: Container(padding: const EdgeInsets.all(4), color: Colors.black54, child: Text(label, style: const TextStyle(color: Colors.amber, fontSize: 8, fontWeight: FontWeight.bold)))),
     ]),
   );
